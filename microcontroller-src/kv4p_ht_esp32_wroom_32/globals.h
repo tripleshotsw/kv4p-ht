@@ -72,3 +72,6 @@ bool squelched = false;
 
 // Forward declarations
 void setMode(Mode newMode);
+
+// Active serial interface pointer
+extern Stream* activeSerial;

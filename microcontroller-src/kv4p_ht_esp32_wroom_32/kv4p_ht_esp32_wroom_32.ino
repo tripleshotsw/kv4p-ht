@@ -27,11 +27,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "txAudio.h"
 #include "buttons.h"
 #include "utils.h"
+#include "bluetooth.h"
 
 const uint16_t FIRMWARE_VER = 13;
 
 const uint32_t RSSI_REPORT_INTERVAL_MS = 100;
 const uint16_t USB_BUFFER_SIZE = 1024*2;
+const uint32_t USB_CHECK_INTERVAL_MS = 1000;  // Check USB connection every second
 
 DRA818 sa818_vhf(&Serial2, SA818_VHF);
 DRA818 sa818_uhf(&Serial2, SA818_UHF);
@@ -43,6 +45,64 @@ const char RADIO_MODULE_FOUND     = 'f';
 char radioModuleStatus            = RADIO_MODULE_NOT_FOUND;
 
 Debounce squelchDebounce(100);
+
+// Communication mode tracking
+bool usbConnected = false;
+bool bluetoothInitialized = false;
+Stream* activeSerial = nullptr;  // Pointer to the active serial interface
+
+// Function to check if USB is connected (CDC)
+bool isUsbConnected() {
+  // Simple check - if data has been sent over USB recently
+  return Serial;
+}
+
+void debugLog(const char* message) {
+  if (Serial) {  // If USB is connected
+    Serial.println(message);
+  }
+}
+
+// Check and update connection status
+void updateConnectionStatus() {
+  bool newUsbStatus = isUsbConnected();
+  
+  // If USB connection changed
+  if (newUsbStatus != usbConnected) {
+    usbConnected = newUsbStatus;
+    
+    // USB connected, initialize Bluetooth if not already initialized
+    if (usbConnected && !bluetoothInitialized) {
+      Bluetooth::init();
+      bluetoothInitialized = true;
+      activeSerial = &Serial;  // Default to USB
+      debugLog("USB connected, Bluetooth initialized");
+    }
+  }
+
+  // Log BLE connection status
+  static bool lastBleConnected = false;
+  bool currentBleConnected = Bluetooth::isConnected();
+  if (currentBleConnected != lastBleConnected) {
+    if (currentBleConnected) {
+      debugLog("BLE device connected");
+    } else {
+      debugLog("BLE device disconnected");
+    }
+    lastBleConnected = currentBleConnected;
+  }
+
+  // Check if BLE is connected and switch to it if it is
+  if (bluetoothInitialized && Bluetooth::isConnected() && activeSerial != &bleSerial) {
+    activeSerial = &bleSerial;
+    debugLog("Switching to BLE connection");
+  }
+  // If BLE is not connected and we're not on USB, switch back to USB
+  else if (usbConnected && activeSerial == &bleSerial && !Bluetooth::isConnected()) {
+    activeSerial = &Serial;
+    debugLog("Switching back to USB connection");
+  }
+}
 
 void setMode(Mode newMode) {
   if (mode == newMode) {
@@ -91,6 +151,21 @@ void setup() {
   Serial.setRxBufferSize(USB_BUFFER_SIZE);
   Serial.setTxBufferSize(USB_BUFFER_SIZE);
   Serial.begin(115200);
+  
+  // Initialize with USB connection check
+  usbConnected = isUsbConnected();
+  // Always initialize Bluetooth
+  Bluetooth::init();
+  bluetoothInitialized = true;
+  
+  if (usbConnected) {
+    activeSerial = &Serial;
+    _LOGI("Starting with USB connection");
+  } else {
+    activeSerial = &bleSerial;
+    _LOGI("Starting with Bluetooth connection");
+  }
+  
   // Hardware dependent pin assignments.
   switch (hardware_version) {
     case HW_VER_V1:
@@ -233,7 +308,19 @@ void rssiLoop() {
   }
 }
 
+void bleLoop() {
+  if (Bluetooth::isConnected()) {
+    esp_task_wdt_reset();
+  }
+}
+
 void loop() {
+  // Check connection status periodically
+  EVERY_N_MILLISECONDS(USB_CHECK_INTERVAL_MS) {
+    updateConnectionStatus();
+  }
+  END_EVERY_N_MILLISECONDS();
+  
   squelched = squelchDebounce.debounce((digitalRead(SQ_PIN) == HIGH));
   debugLoop();
   ledLoop();
@@ -242,4 +329,5 @@ void loop() {
   txAudioLoop();
   buttonsLoop();
   rssiLoop();
+  bleLoop();
 }

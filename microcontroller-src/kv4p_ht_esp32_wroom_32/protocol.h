@@ -113,15 +113,15 @@ void __sendCmdToHost(SndCommand cmd, const byte *params, size_t paramsLen) {
     paramsLen = PROTO_MTU;  // or handle differently (split, or error, etc.)
   }
   // 1. Leading delimiter
-  Serial.write(COMMAND_DELIMITER, DELIMITER_LENGTH);
+  activeSerial->write(COMMAND_DELIMITER, DELIMITER_LENGTH);
   // 2. Command byte
-  Serial.write((uint8_t*) &cmd, 1);
+  activeSerial->write((uint8_t*) &cmd, 1);
   // 3. Parameter length
   uint16_t len = paramsLen;
-  Serial.write((uint8_t*) &len, sizeof(len));
+  activeSerial->write((uint8_t*) &len, sizeof(len));
   // 4. Parameter bytes
   if (paramsLen > 0) {
-    Serial.write(params, paramsLen);
+    activeSerial->write(params, paramsLen);
   }
 }
 
@@ -169,18 +169,17 @@ typedef void (*CommandCallback)(RcvCommand command, uint8_t *params, size_t para
 
 class FrameParser {
 public:
-  FrameParser(Stream &serial, CommandCallback callback) 
-    : _serial(serial), _callback(callback), _matchedDelimiterTokens(0),
+  FrameParser(CommandCallback callback) 
+    : _callback(callback), _matchedDelimiterTokens(0),
       _command(COMMAND_RCV_UNKNOWN), _commandParamLen(0), _paramIndex(0) {}
 
   void loop() {
-    while (_serial.available() > 0) {
-      uint8_t b = _serial.read();
+    while (activeSerial->available() > 0) {
+      uint8_t b = activeSerial->read();
       processByte(b);
     }
   }
 private:
-  Stream &_serial;
   CommandCallback _callback;
   uint8_t _matchedDelimiterTokens;
   RcvCommand _command;
@@ -233,8 +232,8 @@ private:
 void handleCommands(RcvCommand command, uint8_t *params, size_t param_len);
 
 // Create an instance of FrameParser and associate it with the handleCommands function
-// The FrameParser object uses the Serial interface and the handleCommands function for processing commands.
-FrameParser parser(Serial, &handleCommands);
+// The FrameParser object uses the serialRead/serialAvailable functions and the handleCommands function for processing commands.
+FrameParser parser(&handleCommands);
 
 void inline protocolLoop() {
   parser.loop();
