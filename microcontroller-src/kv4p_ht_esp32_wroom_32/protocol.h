@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Arduino.h>
 #include "globals.h"
 #include "debug.h"
+#include "transport.h"
 
 // Delimeter must also match Android app
 const uint8_t COMMAND_DELIMITER[] = {0xDE, 0xAD, 0xBE, 0xEF};
@@ -122,24 +123,21 @@ REQUIRE_TRIVIALLY_COPYABLE(RSSIState);
 
 /**
  * Send a command with params
- * Format: [DELIMITER(8 bytes)] [CMD(1 byte)] [paramLen(1 byte)] [param data(N bytes)]
+ * Format: [DELIMITER(8 bytes)] [CMD(1 byte)] [paramLen(2 bytes)] [param data(N bytes)]
  */
 void __sendCmdToHost(SndCommand cmd, const uint8_t *params, size_t paramsLen) {
-  // Safety check: limit paramsLen to 255 for 1-byte length
   if (paramsLen > PROTO_MTU) {
-    paramsLen = PROTO_MTU;  // or handle differently (split, or error, etc.)
+    paramsLen = PROTO_MTU;
   }
-  // 1. Leading delimiter
-  Serial.write(COMMAND_DELIMITER, DELIMITER_LENGTH);
-  // 2. Command byte
-  Serial.write((uint8_t*) &cmd, 1);
-  // 3. Parameter length
+  TransportManager& transport = TransportManager::getInstance();
+  transport.write(COMMAND_DELIMITER, DELIMITER_LENGTH);
+  transport.write((uint8_t*) &cmd, 1);
   uint16_t len = paramsLen;
-  Serial.write((uint8_t*) &len, sizeof(len));
-  // 4. Parameter bytes
+  transport.write((uint8_t*) &len, sizeof(len));
   if (paramsLen > 0) {
-    Serial.write(params, paramsLen);
+    transport.write(params, paramsLen);
   }
+  transport.flush();
 }
 
 void inline __sendCmdToHost(SndCommand cmd) {
@@ -252,13 +250,17 @@ private:
 };
 
 // Forward declaration of handleCommands function
-// This function processes incoming commands, taking a command type, parameters, and their length.
 void handleCommands(RcvCommand command, uint8_t *params, size_t param_len);
 
-// Create an instance of FrameParser and associate it with the handleCommands function
-// The FrameParser object uses the Serial interface and the handleCommands function for processing commands.
-FrameParser parser(Serial, &handleCommands);
+// Deferred initialization - parser created after transport setup
+FrameParser* parser = nullptr;
+
+void initProtocol() {
+  parser = new FrameParser(TransportManager::getInstance().getInputStream(), &handleCommands);
+}
 
 void inline protocolLoop() {
-  parser.loop();
+  if (parser) {
+    parser->loop();
+  }
 }
