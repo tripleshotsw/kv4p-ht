@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buttons.h"
 #include "utils.h"
 #include "board.h"
+#include "transport.h"
 
 const uint16_t FIRMWARE_VER = 15;
 
@@ -89,6 +90,10 @@ void setup() {
   Serial.println("Use `logcat` or a kv4p decoder to view readable logs.");
   Serial.println("More info: https://github.com/VanceVagell/kv4p-ht/blob/main/microcontroller-src/kv4p_ht_esp32_wroom_32/readme.md");
   Serial.println("==============================");
+  // Initialize transport manager (includes BLE)
+  TransportManager::getInstance().begin();
+  // Initialize protocol with transport
+  initProtocol();
   // Configure watch dog timer (WDT), which will reset the system if it gets stuck somehow.
   esp_task_wdt_init(10, true);  // Reboot if locked up for a bit
   esp_task_wdt_add(NULL);       // Add the current task to WDT watch
@@ -235,6 +240,7 @@ void loop() {
   debugLoop();
   ledLoop();
   buttonsLoop();
+  TransportManager::getInstance().loop();
   protocolLoop();
   rxAudioLoop();
   txAudioLoop();
