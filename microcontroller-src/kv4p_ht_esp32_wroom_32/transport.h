@@ -92,9 +92,12 @@ public:
   }
 
   void begin() {
+    Serial.println("[BLE] Starting BLE serial...");
     _bleSerial.begin(BLE_DEVICE_NAME);
+    Serial.println("[BLE] BLE serial started, advertising as: " BLE_DEVICE_NAME);
     _multiStream = new MultiStream(Serial, _bleSerial);
     _initialized = true;
+    Serial.println("[BLE] Transport initialized");
   }
 
   void loop() {
@@ -102,8 +105,10 @@ public:
     if (currentBleState != _bleConnected) {
       _bleConnected = currentBleState;
       if (_bleConnected) {
+        Serial.println("[BLE] Connected - switching to BLE transport");
         switchTransport(TRANSPORT_BLE);
       } else {
+        Serial.println("[BLE] Disconnected - switching to USB transport");
         switchTransport(TRANSPORT_USB_SERIAL);
       }
     }

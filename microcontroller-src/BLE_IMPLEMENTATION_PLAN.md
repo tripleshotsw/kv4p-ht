@@ -299,13 +299,13 @@ lib_deps =
 ---
 
 ## Testing Checklist
-- [ ] USB communication works (regression test)
-- [ ] BLE device advertises as "KV4P-HT"
-- [ ] BLE connection triggers transport switch
+- [x] USB communication works (regression test)
+- [x] BLE device advertises as "KV4P-HT"
+- [x] BLE connection triggers transport switch
 - [ ] Commands work over BLE
 - [ ] RX audio streams over BLE
 - [ ] TX audio works over BLE
-- [ ] BLE disconnect falls back to USB
+- [x] BLE disconnect falls back to USB
 - [ ] Reconnection works reliably
 
 ---

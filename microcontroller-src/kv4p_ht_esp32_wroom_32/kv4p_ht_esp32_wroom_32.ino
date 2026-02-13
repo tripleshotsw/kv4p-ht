@@ -236,6 +236,7 @@ void rssiLoop() {
 }
 
 void loop() {
+  esp_task_wdt_reset();
   squelched = squelchDebounce.debounce((digitalRead(hw.pins.pinSq) == HIGH));
   debugLoop();
   ledLoop();
