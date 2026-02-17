@@ -42,6 +42,16 @@ class RadioService: ObservableObject {
             self?.handleCommand(cmd, data)
         }
 
+        // Forward nested ObservableObject changes so SwiftUI views update
+        bleManager.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        state.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+
         bleManager.receivedData
             .sink { [weak self] data in
                 self?.frameParser.processBytes(data)
