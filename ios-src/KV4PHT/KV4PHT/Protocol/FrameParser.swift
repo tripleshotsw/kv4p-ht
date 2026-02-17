@@ -17,6 +17,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 import Foundation
+import os
+
+private let logger = Logger(subsystem: "com.kv4p.ht", category: "Protocol")
 
 // State machine parser matching protocol.h FrameParser::processByte() exactly.
 // Frame format: [0xDEADBEEF delimiter] [command: 1B] [paramLen: 2B LE] [params: 0-N bytes]
@@ -71,6 +74,7 @@ class FrameParser {
                 return
             }
             if commandParamLen > Self.maxParamLength {
+                logger.warning("Frame rejected: paramLen \(self.commandParamLen) exceeds max \(Self.maxParamLength)")
                 reset()
                 return
             }
@@ -86,6 +90,7 @@ class FrameParser {
 
     private func dispatchCommand() {
         let cmd = RcvCommand(rawValue: command) ?? .unknown
+        logger.debug("Parsed frame: cmd=0x\(String(format: "%02X", self.command)) (\(String(describing: cmd))) params=\(self.paramBuffer.count) bytes")
         onCommand(cmd, paramBuffer)
     }
 

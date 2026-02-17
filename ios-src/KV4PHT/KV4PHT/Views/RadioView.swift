@@ -127,6 +127,11 @@ struct RadioView: View {
             }
             .navigationTitle("KV4P HT")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    NavigationLink(destination: DebugLogView()) {
+                        Image(systemName: "ladybug")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Disconnect") {
                         radioService.disconnect()

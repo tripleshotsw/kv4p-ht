@@ -22,6 +22,7 @@
 		A100000D /* PTTButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000D /* PTTButton.swift */; };
 		A100000E /* DataExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000E /* DataExtensions.swift */; };
 		A100000F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B100000F /* Assets.xcassets */; };
+		A1000010 /* DebugLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000011 /* DebugLogView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +42,7 @@
 		B100000E /* DataExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataExtensions.swift; sourceTree = "<group>"; };
 		B100000F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B1000010 /* KV4PHT.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KV4PHT.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1000011 /* DebugLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -120,6 +122,7 @@
 				B100000B /* RadioView.swift */,
 				B100000C /* SMeterView.swift */,
 				B100000D /* PTTButton.swift */,
+				B1000011 /* DebugLogView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -223,6 +226,7 @@
 				A100000C /* SMeterView.swift in Sources */,
 				A100000D /* PTTButton.swift in Sources */,
 				A100000E /* DataExtensions.swift in Sources */,
+				A1000010 /* DebugLogView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

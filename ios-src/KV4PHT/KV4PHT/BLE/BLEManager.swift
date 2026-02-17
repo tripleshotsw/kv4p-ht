@@ -18,6 +18,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import CoreBluetooth
 import Combine
+import os
+
+private let logger = Logger(subsystem: "com.kv4p.ht", category: "BLE")
 
 enum BLEConnectionState {
     case disconnected
@@ -44,9 +47,13 @@ class BLEManager: NSObject, ObservableObject {
     }
 
     func startScanning() {
-        guard centralManager.state == .poweredOn else { return }
+        guard centralManager.state == .poweredOn else {
+            logger.warning("Cannot scan: Bluetooth not powered on (state: \(String(describing: self.centralManager.state.rawValue)))")
+            return
+        }
         discoveredDevices.removeAll()
         connectionState = .scanning
+        logger.info("Started scanning for KV4P-HT devices")
         centralManager.scanForPeripherals(
             withServices: [BLEConstants.nordicUARTServiceUUID],
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
@@ -55,6 +62,7 @@ class BLEManager: NSObject, ObservableObject {
 
     func stopScanning() {
         centralManager.stopScan()
+        logger.info("Stopped scanning")
         if case .scanning = connectionState {
             connectionState = .disconnected
         }
@@ -65,10 +73,12 @@ class BLEManager: NSObject, ObservableObject {
         connectionState = .connecting
         connectedPeripheral = peripheral
         peripheral.delegate = self
+        logger.info("Connecting to \(peripheral.name ?? "unknown", privacy: .public) (\(peripheral.identifier.uuidString, privacy: .public))")
         centralManager.connect(peripheral, options: nil)
     }
 
     func disconnect() {
+        logger.info("Disconnecting")
         if let peripheral = connectedPeripheral {
             centralManager.cancelPeripheralConnection(peripheral)
         }
@@ -77,12 +87,16 @@ class BLEManager: NSObject, ObservableObject {
 
     func write(_ data: Data) {
         guard let peripheral = connectedPeripheral,
-              let characteristic = rxCharacteristic else { return }
+              let characteristic = rxCharacteristic else {
+            logger.error("Write failed: no connected peripheral or RX characteristic")
+            return
+        }
 
         let mtu = peripheral.maximumWriteValueLength(for: .withoutResponse)
         if data.count <= mtu {
             peripheral.writeValue(data, for: characteristic, type: .withoutResponse)
         } else {
+            logger.debug("Chunking \(data.count) byte write (MTU: \(mtu))")
             var offset = 0
             while offset < data.count {
                 let chunkSize = min(mtu, data.count - offset)
@@ -110,14 +124,18 @@ class BLEManager: NSObject, ObservableObject {
 
 extension BLEManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        logger.info("Bluetooth state changed: \(String(describing: central.state.rawValue))")
         switch central.state {
         case .poweredOn:
-            break
+            logger.info("Bluetooth powered on")
         case .unauthorized:
+            logger.error("Bluetooth permission denied")
             connectionState = .error("Bluetooth permission denied")
         case .poweredOff:
+            logger.warning("Bluetooth is turned off")
             connectionState = .error("Bluetooth is turned off")
         case .unsupported:
+            logger.error("Bluetooth not supported on this device")
             connectionState = .error("Bluetooth not supported")
         default:
             break
@@ -129,20 +147,28 @@ extension BLEManager: CBCentralManagerDelegate {
                          advertisementData: [String: Any],
                          rssi RSSI: NSNumber) {
         if !discoveredDevices.contains(where: { $0.identifier == peripheral.identifier }) {
+            logger.info("Discovered device: \(peripheral.name ?? "unknown", privacy: .public) RSSI: \(RSSI.intValue)")
             discoveredDevices.append(peripheral)
         }
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        logger.info("Connected to \(peripheral.name ?? "unknown", privacy: .public), discovering services...")
         peripheral.discoverServices([BLEConstants.nordicUARTServiceUUID])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        logger.error("Failed to connect: \(error?.localizedDescription ?? "unknown error", privacy: .public)")
         connectionState = .error("Failed to connect: \(error?.localizedDescription ?? "unknown error")")
         cleanup()
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        if let error = error {
+            logger.warning("Disconnected with error: \(error.localizedDescription, privacy: .public)")
+        } else {
+            logger.info("Disconnected cleanly")
+        }
         cleanup()
     }
 }
@@ -151,8 +177,14 @@ extension BLEManager: CBCentralManagerDelegate {
 
 extension BLEManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        if let error = error {
+            logger.error("Service discovery failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
         guard let services = peripheral.services else { return }
+        logger.info("Discovered \(services.count) service(s), looking for Nordic UART...")
         for service in services where service.uuid == BLEConstants.nordicUARTServiceUUID {
+            logger.info("Found Nordic UART service, discovering characteristics...")
             peripheral.discoverCharacteristics(
                 [BLEConstants.rxCharacteristicUUID, BLEConstants.txCharacteristicUUID],
                 for: service
@@ -161,12 +193,18 @@ extension BLEManager: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        if let error = error {
+            logger.error("Characteristic discovery failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
         guard let characteristics = service.characteristics else { return }
         for characteristic in characteristics {
             switch characteristic.uuid {
             case BLEConstants.rxCharacteristicUUID:
+                logger.info("Found RX characteristic (write to device)")
                 rxCharacteristic = characteristic
             case BLEConstants.txCharacteristicUUID:
+                logger.info("Found TX characteristic (notify from device), subscribing...")
                 txCharacteristic = characteristic
                 peripheral.setNotifyValue(true, for: characteristic)
             default:
@@ -174,13 +212,20 @@ extension BLEManager: CBPeripheralDelegate {
             }
         }
         if rxCharacteristic != nil && txCharacteristic != nil {
+            let mtu = peripheral.maximumWriteValueLength(for: .withoutResponse)
+            logger.info("BLE ready - both characteristics found, MTU: \(mtu)")
             connectionState = .connected
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        if let error = error {
+            logger.error("Characteristic update error: \(error.localizedDescription, privacy: .public)")
+            return
+        }
         guard characteristic.uuid == BLEConstants.txCharacteristicUUID,
               let data = characteristic.value else { return }
+        logger.debug("Received \(data.count) bytes from device")
         receivedData.send(data)
     }
 }
