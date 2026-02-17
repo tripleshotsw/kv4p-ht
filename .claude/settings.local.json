@@ -3,7 +3,14 @@
     "allow": [
       "Bash(cat:*)",
       "WebSearch",
-      "Bash(pio run:*)"
+      "Bash(pio run:*)",
+      "Bash(xargs:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(xcode-select:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
