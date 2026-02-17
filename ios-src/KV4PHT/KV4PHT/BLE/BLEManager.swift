@@ -98,16 +98,19 @@ class BLEManager: NSObject, ObservableObject {
             return
         }
 
-        let mtu = peripheral.maximumWriteValueLength(for: .withoutResponse)
+        // Use the write type supported by the characteristic
+        let writeType: CBCharacteristicWriteType =
+            characteristic.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
+        let mtu = peripheral.maximumWriteValueLength(for: writeType)
         if data.count <= mtu {
-            peripheral.writeValue(data, for: characteristic, type: .withoutResponse)
+            peripheral.writeValue(data, for: characteristic, type: writeType)
         } else {
-            logger.debug("Chunking \(data.count) byte write (MTU: \(mtu))")
+            logger.debug("Chunking \(data.count) byte write (MTU: \(mtu), type: \(writeType == .withResponse ? "withResponse" : "withoutResponse"))")
             var offset = 0
             while offset < data.count {
                 let chunkSize = min(mtu, data.count - offset)
                 let chunk = data.subdata(in: offset..<(offset + chunkSize))
-                peripheral.writeValue(chunk, for: characteristic, type: .withoutResponse)
+                peripheral.writeValue(chunk, for: characteristic, type: writeType)
                 offset += chunkSize
             }
         }
@@ -227,10 +230,10 @@ extension BLEManager: CBPeripheralDelegate {
         for characteristic in characteristics {
             switch characteristic.uuid {
             case BLEConstants.rxCharacteristicUUID:
-                logger.info("Found RX characteristic (write to device)")
+                logger.info("Found RX characteristic (write to device), properties: 0x\(String(characteristic.properties.rawValue, radix: 16))")
                 rxCharacteristic = characteristic
             case BLEConstants.txCharacteristicUUID:
-                logger.info("Found TX characteristic (notify from device), subscribing...")
+                logger.info("Found TX characteristic (notify from device), properties: 0x\(String(characteristic.properties.rawValue, radix: 16)), subscribing...")
                 txCharacteristic = characteristic
                 peripheral.setNotifyValue(true, for: characteristic)
             default:
