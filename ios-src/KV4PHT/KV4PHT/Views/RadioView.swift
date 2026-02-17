@@ -59,6 +59,40 @@ struct RadioView: View {
                 SMeterView(value: radioService.state.sMeter)
                     .padding(.horizontal)
 
+                // CTCSS Tones
+                HStack(spacing: 16) {
+                    VStack {
+                        Text("TX Tone")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Picker("TX Tone", selection: Binding(
+                            get: { radioService.state.ctcssTx },
+                            set: { radioService.state.ctcssTx = $0 }
+                        )) {
+                            ForEach(Array(CTCSSTones.labels.enumerated()), id: \.offset) { index, label in
+                                Text(label).tag(UInt8(index))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+
+                    VStack {
+                        Text("RX Tone")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Picker("RX Tone", selection: Binding(
+                            get: { radioService.state.ctcssRx },
+                            set: { radioService.state.ctcssRx = $0 }
+                        )) {
+                            ForEach(Array(CTCSSTones.labels.enumerated()), id: \.offset) { index, label in
+                                Text(label).tag(UInt8(index))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                }
+                .padding(.horizontal)
+
                 // Settings row
                 HStack(spacing: 16) {
                     // Squelch

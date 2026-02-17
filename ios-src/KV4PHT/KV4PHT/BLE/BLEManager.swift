@@ -40,6 +40,8 @@ class BLEManager: NSObject, ObservableObject {
     private var centralManager: CBCentralManager!
     private var rxCharacteristic: CBCharacteristic?
     private var txCharacteristic: CBCharacteristic?
+    private var lastConnectedIdentifier: UUID?
+    private var autoReconnect = false
 
     override init() {
         super.init()
@@ -72,13 +74,17 @@ class BLEManager: NSObject, ObservableObject {
         stopScanning()
         connectionState = .connecting
         connectedPeripheral = peripheral
+        lastConnectedIdentifier = peripheral.identifier
+        autoReconnect = true
         peripheral.delegate = self
         logger.info("Connecting to \(peripheral.name ?? "unknown", privacy: .public) (\(peripheral.identifier.uuidString, privacy: .public))")
         centralManager.connect(peripheral, options: nil)
     }
 
     func disconnect() {
-        logger.info("Disconnecting")
+        logger.info("Disconnecting (auto-reconnect disabled)")
+        autoReconnect = false
+        lastConnectedIdentifier = nil
         if let peripheral = connectedPeripheral {
             centralManager.cancelPeripheralConnection(peripheral)
         }
@@ -169,7 +175,27 @@ extension BLEManager: CBCentralManagerDelegate {
         } else {
             logger.info("Disconnected cleanly")
         }
+        let shouldReconnect = autoReconnect
+        let identifier = lastConnectedIdentifier
         cleanup()
+
+        if shouldReconnect, let identifier = identifier {
+            logger.info("Auto-reconnecting to \(identifier.uuidString, privacy: .public)...")
+            connectionState = .connecting
+            let peripherals = centralManager.retrievePeripherals(withIdentifiers: [identifier])
+            if let peripheral = peripherals.first {
+                connectedPeripheral = peripheral
+                lastConnectedIdentifier = identifier
+                autoReconnect = true
+                peripheral.delegate = self
+                centralManager.connect(peripheral, options: nil)
+            } else {
+                logger.warning("Auto-reconnect: peripheral not found, starting scan")
+                autoReconnect = true
+                lastConnectedIdentifier = identifier
+                startScanning()
+            }
+        }
     }
 }
 
