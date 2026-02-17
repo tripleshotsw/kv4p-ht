@@ -162,7 +162,10 @@ void handleCommands(RcvCommand command, uint8_t *params, size_t param_len) {
       if (param_len == sizeof(Filters)) {
         Filters filters;
         memcpy(&filters, params, sizeof(Filters));
-        while (!sa818.filters((filters.flags & FILTER_PRE), (filters.flags & FILTER_HIGH), (filters.flags & FILTER_LOW)));
+        for (int i = 0; i < 10; i++) {
+          esp_task_wdt_reset();
+          if (sa818.filters((filters.flags & FILTER_PRE), (filters.flags & FILTER_HIGH), (filters.flags & FILTER_LOW))) break;
+        }
         esp_task_wdt_reset();
       }
       break;
@@ -170,12 +173,15 @@ void handleCommands(RcvCommand command, uint8_t *params, size_t param_len) {
       if (param_len == sizeof(Group)) {
         Group group;
         memcpy(&group, params, sizeof(Group));
-        while (!sa818.group(group.bw, group.freq_tx, group.freq_rx, group.ctcss_tx, group.squelch, group.ctcss_rx));
+        for (int i = 0; i < 10; i++) {
+          esp_task_wdt_reset();
+          if (sa818.group(group.bw, group.freq_tx, group.freq_rx, group.ctcss_tx, group.squelch, group.ctcss_rx)) break;
+        }
         esp_task_wdt_reset();
         if (mode == MODE_STOPPED) {
-          setMode(MODE_RX);   
+          setMode(MODE_RX);
         }
-      } 
+      }
       break;
     case COMMAND_HOST_STOP:
       setMode(MODE_STOPPED);

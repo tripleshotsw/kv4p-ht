@@ -42,6 +42,7 @@ class BLEManager: NSObject, ObservableObject {
     private var txCharacteristic: CBCharacteristic?
     private var lastConnectedIdentifier: UUID?
     private var autoReconnect = false
+    private var reconnectAttempts = 0
 
     override init() {
         super.init()
@@ -121,11 +122,19 @@ class BLEManager: NSObject, ObservableObject {
         return false
     }
 
-    private func cleanup() {
+    private func cleanupCharacteristics() {
         rxCharacteristic = nil
         txCharacteristic = nil
         connectedPeripheral = nil
+    }
+
+    private func cleanup() {
+        cleanupCharacteristics()
         connectionState = .disconnected
+    }
+
+    func resetReconnectCounter() {
+        reconnectAttempts = 0
     }
 }
 
@@ -180,24 +189,31 @@ extension BLEManager: CBCentralManagerDelegate {
         }
         let shouldReconnect = autoReconnect
         let identifier = lastConnectedIdentifier
-        cleanup()
+
+        cleanupCharacteristics()
 
         if shouldReconnect, let identifier = identifier {
-            logger.info("Auto-reconnecting to \(identifier.uuidString, privacy: .public)...")
+            reconnectAttempts += 1
             connectionState = .connecting
-            let peripherals = centralManager.retrievePeripherals(withIdentifiers: [identifier])
-            if let peripheral = peripherals.first {
-                connectedPeripheral = peripheral
-                lastConnectedIdentifier = identifier
-                autoReconnect = true
-                peripheral.delegate = self
-                centralManager.connect(peripheral, options: nil)
-            } else {
-                logger.warning("Auto-reconnect: peripheral not found, starting scan")
-                autoReconnect = true
-                lastConnectedIdentifier = identifier
-                startScanning()
+            autoReconnect = true
+            lastConnectedIdentifier = identifier
+
+            let delay = 2.0
+            logger.info("Auto-reconnecting to \(identifier.uuidString, privacy: .public) in \(delay)s (attempt \(self.reconnectAttempts))...")
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self = self, self.autoReconnect else { return }
+                let peripherals = self.centralManager.retrievePeripherals(withIdentifiers: [identifier])
+                if let peripheral = peripherals.first {
+                    self.connectedPeripheral = peripheral
+                    peripheral.delegate = self
+                    self.centralManager.connect(peripheral, options: nil)
+                } else {
+                    logger.warning("Auto-reconnect: peripheral not found, starting scan")
+                    self.startScanning()
+                }
             }
+        } else {
+            connectionState = .disconnected
         }
     }
 }
@@ -253,7 +269,7 @@ extension BLEManager: CBPeripheralDelegate {
             return
         }
         guard characteristic.uuid == BLEConstants.txCharacteristicUUID,
-              let data = characteristic.value else { return }
+              let data = characteristic.value, !data.isEmpty else { return }
         logger.debug("Received \(data.count) bytes from device")
         receivedData.send(data)
     }

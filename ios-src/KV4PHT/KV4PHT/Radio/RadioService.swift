@@ -37,6 +37,9 @@ class RadioService: ObservableObject {
     private var handshakeTimer: DispatchWorkItem?
     private var versionTimer: DispatchWorkItem?
 
+    // BLE keepalive
+    private var keepaliveTimer: DispatchSourceTimer?
+
     init() {
         frameParser = FrameParser { [weak self] cmd, data in
             self?.handleCommand(cmd, data)
@@ -83,6 +86,7 @@ class RadioService: ObservableObject {
     }
 
     func disconnect() {
+        stopKeepalive()
         handshakeTimer?.cancel()
         versionTimer?.cancel()
         bleManager.disconnect()
@@ -130,13 +134,21 @@ class RadioService: ObservableObject {
         case .connected:
             logger.info("BLE connected, starting handshake")
             startHandshake()
+        case .connecting:
+            logger.info("BLE connecting (auto-reconnect)")
+            stopKeepalive()
+            DispatchQueue.main.async {
+                self.state.connectionStatus = .connecting
+            }
         case .disconnected:
             logger.info("BLE disconnected")
+            stopKeepalive()
             DispatchQueue.main.async {
                 self.state.connectionStatus = .disconnected
             }
         case .error(let msg):
             logger.error("BLE error: \(msg, privacy: .public)")
+            stopKeepalive()
             DispatchQueue.main.async {
                 self.state.connectionStatus = .error(msg)
             }
@@ -211,6 +223,8 @@ class RadioService: ObservableObject {
 
             logger.info("Handshake: complete, transitioning to connected")
             self.state.connectionStatus = .connected
+            self.bleManager.resetReconnectCounter()
+            self.startKeepalive()
             self.setRSSIEnabled(true)
             self.tune()
         }
@@ -259,6 +273,29 @@ class RadioService: ObservableObject {
             case .unknown:
                 logger.warning("Received unknown command: 0x\(String(format: "%02X", cmd.rawValue)), \(data.count) bytes")
             }
+        }
+    }
+
+    // MARK: - BLE Keepalive
+
+    private func startKeepalive() {
+        stopKeepalive()
+        logger.info("Starting BLE keepalive (2s interval, sending RSSI requests)")
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 2.0, repeating: 2.0)
+        timer.setEventHandler { [weak self] in
+            guard let self = self, self.bleManager.isConnected else { return }
+            logger.debug("Keepalive: sending RSSI request")
+            self.send(FrameBuilder.setRSSI(on: true))
+        }
+        keepaliveTimer = timer
+        timer.resume()
+    }
+
+    private func stopKeepalive() {
+        if let timer = keepaliveTimer {
+            timer.cancel()
+            keepaliveTimer = nil
         }
     }
 

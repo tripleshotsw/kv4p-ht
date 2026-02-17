@@ -123,20 +123,32 @@ REQUIRE_TRIVIALLY_COPYABLE(RSSIState);
 
 /**
  * Send a command with params
- * Format: [DELIMITER(8 bytes)] [CMD(1 byte)] [paramLen(2 bytes)] [param data(N bytes)]
+ * Format: [DELIMITER(4 bytes)] [CMD(1 byte)] [paramLen(2 bytes)] [param data(N bytes)]
+ *
+ * Assembles the entire frame into a single buffer before writing so that
+ * BleSerial emits one BLE notification instead of four.
  */
 void __sendCmdToHost(SndCommand cmd, const uint8_t *params, size_t paramsLen) {
   if (paramsLen > PROTO_MTU) {
     paramsLen = PROTO_MTU;
   }
-  TransportManager& transport = TransportManager::getInstance();
-  transport.write(COMMAND_DELIMITER, DELIMITER_LENGTH);
-  transport.write((uint8_t*) &cmd, 1);
+  const size_t headerLen = DELIMITER_LENGTH + 1 + sizeof(uint16_t);
+  const size_t frameLen = headerLen + paramsLen;
+  uint8_t frameBuf[headerLen + PROTO_MTU];
+
+  size_t offset = 0;
+  memcpy(frameBuf + offset, COMMAND_DELIMITER, DELIMITER_LENGTH);
+  offset += DELIMITER_LENGTH;
+  frameBuf[offset++] = (uint8_t)cmd;
   uint16_t len = paramsLen;
-  transport.write((uint8_t*) &len, sizeof(len));
+  memcpy(frameBuf + offset, &len, sizeof(len));
+  offset += sizeof(len);
   if (paramsLen > 0) {
-    transport.write(params, paramsLen);
+    memcpy(frameBuf + offset, params, paramsLen);
   }
+
+  TransportManager& transport = TransportManager::getInstance();
+  transport.write(frameBuf, frameLen);
   transport.flush();
 }
 

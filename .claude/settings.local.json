@@ -10,7 +10,9 @@
       "Bash(xcodebuild:*)",
       "Bash(git status:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(find:*)",
+      "Bash(git -C /Users/paulnorton/Development/TripleShotSoftware/kv4p-ht add microcontroller-src/kv4p_ht_esp32_wroom_32/protocol.h microcontroller-src/kv4p_ht_esp32_wroom_32/kv4p_ht_esp32_wroom_32.ino ios-src/KV4PHT/KV4PHT/BLE/BLEManager.swift ios-src/KV4PHT/KV4PHT/Radio/RadioService.swift .claude/settings.local.json)"
     ]
   }
 }
