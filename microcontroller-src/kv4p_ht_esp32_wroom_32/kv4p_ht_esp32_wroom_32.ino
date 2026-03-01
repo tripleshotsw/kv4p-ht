@@ -44,7 +44,7 @@ const char RADIO_MODULE_NOT_FOUND = 'x';
 const char RADIO_MODULE_FOUND     = 'f';
 char radioModuleStatus            = RADIO_MODULE_NOT_FOUND;
 
-boolean rssiOn = true; // true if RSSI is enabled
+boolean rssiOn = false; // true if RSSI is enabled (set to true by iOS via COMMAND_HOST_RSSI)
 
 Debounce squelchDebounce(100);
 
@@ -143,6 +143,7 @@ void doConfig(Config const &config) {
       break;
     }
   }
+  printEnvironment();
   uint8_t features = (hw.features.hasHL ? FEATURE_HAS_HL : 0) | (hw.features.hasPhysPTT ? FEATURE_HAS_PHY_PTT : 0);
   sendVersion(FIRMWARE_VER, radioModuleStatus, USB_BUFFER_SIZE, hw.rfModuleType, features);
   esp_task_wdt_reset();

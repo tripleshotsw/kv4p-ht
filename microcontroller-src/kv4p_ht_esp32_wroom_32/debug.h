@@ -183,6 +183,7 @@ void measureLoopFrequency() {
   if (now - lastTime >= 1000000) {  // 1,000,000 µs = 1 second
     float frequency = 1e6 / avgLoopTime;  // Convert loop time to frequency
     _LOGI("Loop Time: %.2f µs, Frequency: %.2f Hz", avgLoopTime, frequency);
+    _LOGI("Stack HWM: %u bytes free", uxTaskGetStackHighWaterMark(NULL));
     lastTime = now;
   }
 #endif  
