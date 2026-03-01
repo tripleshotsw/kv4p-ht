@@ -160,6 +160,8 @@ class RadioService: ObservableObject {
     // MARK: - Handshake (matches ProtocolHandshake.java flow)
 
     private func startHandshake() {
+        frameParser.reset()
+        flowControlWindow = 0
         logger.info("Handshake: waiting up to 1s for HELLO from device")
         DispatchQueue.main.async {
             self.state.connectionStatus = .handshaking
@@ -198,6 +200,10 @@ class RadioService: ObservableObject {
 
     private func onVersionReceived(_ data: Data) {
         versionTimer?.cancel()
+        guard case .handshaking = state.connectionStatus else {
+            logger.warning("Ignoring duplicate VERSION frame (already \(String(describing: self.state.connectionStatus)))")
+            return
+        }
         guard let version = FirmwareVersion.from(data: data) else {
             logger.error("Handshake: failed to parse VERSION response (\(data.count) bytes)")
             DispatchQueue.main.async {

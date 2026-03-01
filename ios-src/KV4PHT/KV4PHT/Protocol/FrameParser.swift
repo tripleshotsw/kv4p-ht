@@ -94,7 +94,7 @@ class FrameParser {
         onCommand(cmd, paramBuffer)
     }
 
-    private func reset() {
+    func reset() {
         matchedDelimiterTokens = 0
         commandParamLen = 0
         paramBuffer = Data()
