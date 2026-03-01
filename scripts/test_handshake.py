@@ -259,6 +259,10 @@ def run_test(port: str, baud: int = 115200, timeout: int = 10) -> int:
                 continue
             for cmd, params in parser.feed(raw):
                 _print_frame(cmd, params)
+                # Crash detection: unexpected HELLO means firmware rebooted
+                if cmd == CMD_IN_HELLO:
+                    print(f"\n[{ts()}] *** CRASH DETECTED: unexpected HELLO (firmware rebooted) ***\n")
+                    return False, b""
                 # Crash detection in debug lines
                 if cmd in (CMD_IN_DEBUG_INFO, CMD_IN_DEBUG_ERROR, CMD_IN_DEBUG_WARN):
                     text = decode_debug(params)
@@ -330,6 +334,9 @@ def run_test(port: str, baud: int = 115200, timeout: int = 10) -> int:
             _print_frame(cmd, params)
             if cmd == CMD_IN_WINDOW_UPDATE:
                 got_window_update = True
+            if cmd == CMD_IN_HELLO:
+                print(f"\n[{ts()}] *** CRASH DETECTED: unexpected HELLO (firmware rebooted) ***\n")
+                crashed = True
             if cmd in (CMD_IN_DEBUG_INFO, CMD_IN_DEBUG_ERROR, CMD_IN_DEBUG_WARN):
                 text = decode_debug(params)
                 # Stack health
