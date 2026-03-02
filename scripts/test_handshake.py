@@ -197,10 +197,18 @@ def run_test(port: str, baud: int = 115200, timeout: int = 10) -> int:
     """
     print(f"[{ts()}] Opening {port} at {baud} baud ...")
     try:
-        ser = serial.Serial(port, baud, timeout=0.05)
+        ser = serial.Serial(port, baud, timeout=0.05,
+                            dsrdtr=False, rtscts=False)
     except serial.SerialException as e:
         print(f"ERROR: Cannot open {port}: {e}", file=sys.stderr)
         return 2
+
+    # Reset the ESP32 via the auto-reset circuit (same as esptool does).
+    # Without this, if the device is already running we won't see HELLO,
+    # and if the port-open happens to toggle DTR we might miss the boot window.
+    ser.dtr = False; ser.rts = True;  time.sleep(0.1)   # assert reset
+    ser.dtr = True;  ser.rts = False; time.sleep(0.1)   # boot normally
+    ser.dtr = False                                       # idle
 
     parser = FrameParser()
 
@@ -212,15 +220,24 @@ def run_test(port: str, baud: int = 115200, timeout: int = 10) -> int:
         Returns True if HELLO was seen, False if we timed out.
         """
         deadline = time.time() + seconds
+        raw_total = 0
         while time.time() < deadline:
             raw = ser.read(256)
             if not raw:
                 continue
+            raw_total += len(raw)
             for cmd, params in parser.feed(raw):
                 _print_frame(cmd, params)
                 if cmd == CMD_IN_HELLO:
-                    print(f"  [{ts()}] HELLO received — firmware ready")
+                    print(f"  [{ts()}] HELLO received — firmware ready "
+                          f"({raw_total} raw bytes seen)")
                     return True
+        if raw_total == 0:
+            print(f"  [{ts()}] WARNING: zero bytes received during drain "
+                  f"— check port and connections")
+        else:
+            print(f"  [{ts()}] NOTE: {raw_total} raw bytes received but no "
+                  f"HELLO frame parsed (device may already be running)")
         return False
 
     def _print_frame(cmd: int, params: bytes):
