@@ -64,6 +64,12 @@ private:
   }
 };
 
+// ── Audio task state ────────────────────────────────────────────────────────
+enum AudioTaskState { AUDIO_IDLE, AUDIO_RX, AUDIO_STOPPING };
+volatile AudioTaskState audioTaskState = AUDIO_IDLE;
+SemaphoreHandle_t audioIdleSem = NULL;
+TaskHandle_t audioTaskHandle   = NULL;
+
 bool rxStreamConfigured = false;
 AnalogAudioStream in;
 AudioInfo rxInfo(AUDIO_SAMPLE_RATE, 1, 16);
@@ -85,6 +91,18 @@ inline void setUpADCAttenuator() {
   adc1_config_channel_atten(I2S_ADC_CHANNEL, hw.adcAttenuation);
 }
 
+// Called once early in setup() (before BLE/I2S consume heap) to pre-allocate the
+// OpusEncoder.  Sets enc_out.active=true so later rxOut.begin() calls are no-ops.
+void initRxCodec() {
+  rxEnc.setAudioInfo(rxInfo);
+  auto &encoderConfig = rxEnc.config();
+  encoderConfig.application = OPUS_APPLICATION_AUDIO;
+  encoderConfig.frame_sizes_ms_x2 = OPUS_FRAMESIZE_40_MS;
+  encoderConfig.vbr = 1;
+  encoderConfig.max_bandwidth = OPUS_BANDWIDTH_NARROWBAND;
+  rxOut.begin(rxInfo);  // allocates OpusEncoder via enc_out.begin(); sets enc_out.active=true
+}
+
 void initI2SRx() {
   injectADCBias();
   setUpADCAttenuator();
@@ -97,28 +115,39 @@ void initI2SRx() {
   config.adc_pin = hw.pins.pinAudioIn;
   config.sample_rate = AUDIO_SAMPLE_RATE * 1.02; // 2% over sample rate to avoid buffer underruns
   in.begin(config);
-  rxEnc.setAudioInfo(rxInfo);
-  // configure OPUS additinal parameters
-  auto &encoderConfig = rxEnc.config();
-  encoderConfig.application = OPUS_APPLICATION_AUDIO;
-  encoderConfig.frame_sizes_ms_x2 = OPUS_FRAMESIZE_40_MS;
-  encoderConfig.vbr = 1;
-  encoderConfig.max_bandwidth = OPUS_BANDWIDTH_NARROWBAND;
-  rxEnc.begin(encoderConfig);
+  // Encoder is pre-allocated by initRxCodec(); skip if already open to avoid
+  // re-invoking opus_encoder_create() on a fragmented heap.
+  if (!rxEnc.isOpen()) {
+    rxEnc.setAudioInfo(rxInfo);
+    auto &encoderConfig = rxEnc.config();
+    encoderConfig.application = OPUS_APPLICATION_AUDIO;
+    encoderConfig.frame_sizes_ms_x2 = OPUS_FRAMESIZE_40_MS;
+    encoderConfig.vbr = 1;
+    encoderConfig.max_bandwidth = OPUS_BANDWIDTH_NARROWBAND;
+    rxEnc.begin(encoderConfig);
+  }
   // effects
   effects.clear();
   effects.addEffect(dcOffsetRemover);
   effects.addEffect(gain);
   effects.addEffect(mute);
   effects.begin(rxInfo);
-  // open output
+  // rxOut.begin() is a no-op when enc_out.active==true (encoder already running)
   rxOut.begin(rxInfo);
   rxStreamConfigured = true;
+  audioTaskState = AUDIO_RX;
 }
 
 void endI2SRx() {
   if (rxStreamConfigured) {
-    rxOut.end();
+    audioTaskState = AUDIO_STOPPING;
+    if (audioIdleSem != NULL) {
+      xSemaphoreTake(audioIdleSem, portMAX_DELAY);
+    }
+    // Do NOT call rxOut.end() — that destroys the OpusEncoder.
+    // Keep it alive so the next initI2SRx() can reuse it without re-allocating
+    // from the (now fragmented) heap.  Any partial buffered frame is discarded,
+    // which is acceptable when stopping RX.
     effects.end();
     in.end();
   }
@@ -130,5 +159,35 @@ void rxAudioLoop() {
     mute.setActive(squelched);
     rxCopier.copy();
     esp_task_wdt_reset();
+  }
+}
+
+void audioTask(void *) {
+  audioIdleSem = xSemaphoreCreateBinary();
+  esp_task_wdt_add(NULL);
+  while (true) {
+    switch (audioTaskState) {
+      case AUDIO_IDLE:
+        esp_task_wdt_reset();
+        vTaskDelay(1);
+        break;
+      case AUDIO_RX:
+        mute.setActive(squelched);
+        rxCopier.copy();
+        esp_task_wdt_reset();
+        {
+          static uint32_t _lastHWM = 0;
+          uint32_t _now = millis();
+          if (_now - _lastHWM >= 1000) {
+            _lastHWM = _now;
+            _LOGI("AudioTask Stack HWM: %u bytes free", uxTaskGetStackHighWaterMark(NULL));
+          }
+        }
+        break;
+      case AUDIO_STOPPING:
+        audioTaskState = AUDIO_IDLE;
+        xSemaphoreGive(audioIdleSem);
+        break;
+    }
   }
 }

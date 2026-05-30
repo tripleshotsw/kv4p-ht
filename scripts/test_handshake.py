@@ -186,7 +186,8 @@ CRASH_REASONS = [
 ]
 
 
-def run_test(port: str, baud: int = 115200, timeout: int = 10) -> int:
+def run_test(port: str, baud: int = 115200, timeout: int = 10,
+             raw_log: str | None = None) -> int:
     """
     Run the handshake test sequence.
 
@@ -210,6 +211,14 @@ def run_test(port: str, baud: int = 115200, timeout: int = 10) -> int:
     ser.dtr = True;  ser.rts = False; time.sleep(0.1)   # boot normally
     ser.dtr = False                                       # idle
 
+    _raw_log_fh = open(raw_log, "wb") if raw_log else None
+
+    def _tee(data: bytes) -> bytes:
+        if _raw_log_fh and data:
+            _raw_log_fh.write(data)
+            _raw_log_fh.flush()
+        return data
+
     parser = FrameParser()
 
     # ── Internal helpers ────────────────────────────────────────────────────
@@ -222,7 +231,7 @@ def run_test(port: str, baud: int = 115200, timeout: int = 10) -> int:
         deadline = time.time() + seconds
         raw_total = 0
         while time.time() < deadline:
-            raw = ser.read(256)
+            raw = _tee(ser.read(256))
             if not raw:
                 continue
             raw_total += len(raw)
@@ -271,7 +280,7 @@ def run_test(port: str, baud: int = 115200, timeout: int = 10) -> int:
         if extra_cmds is None:
             extra_cmds = set()
         while time.time() < deadline:
-            raw = ser.read(256)
+            raw = _tee(ser.read(256))
             if not raw:
                 continue
             for cmd, params in parser.feed(raw):
@@ -344,7 +353,7 @@ def run_test(port: str, baud: int = 115200, timeout: int = 10) -> int:
     stack_hwm_reported = False
 
     while time.time() < monitor_end:
-        raw = ser.read(256)
+        raw = _tee(ser.read(256))
         if not raw:
             continue
         for cmd, params in parser.feed(raw):
@@ -370,6 +379,9 @@ def run_test(port: str, baud: int = 115200, timeout: int = 10) -> int:
                         break
 
     ser.close()
+    if _raw_log_fh:
+        _raw_log_fh.close()
+        print(f"[{ts()}] Raw log saved to: {raw_log}")
 
     # ── Result ───────────────────────────────────────────────────────────────
     print()
@@ -401,9 +413,12 @@ def main():
     parser.add_argument("--timeout", type=int, default=10,
                         help="Per-step timeout in seconds (default: 10; "
                              "CONFIG step always gets at least 25 s)")
+    parser.add_argument("--raw-log", metavar="FILE",
+                        help="Save all raw serial bytes to FILE (useful for "
+                             "capturing ESP32 panic dumps)")
     args = parser.parse_args()
 
-    exit_code = run_test(args.port, args.baud, args.timeout)
+    exit_code = run_test(args.port, args.baud, args.timeout, args.raw_log)
     print(f"\nExit code: {exit_code}  "
           f"({'PASS' if exit_code == 0 else 'CRASH' if exit_code == 1 else 'TIMEOUT/NO-RESPONSE'})")
     sys.exit(exit_code)

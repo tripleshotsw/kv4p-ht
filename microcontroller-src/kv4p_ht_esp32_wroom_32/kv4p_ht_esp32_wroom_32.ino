@@ -32,6 +32,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 const uint16_t FIRMWARE_VER = 15;
 
+// Opus (NONTHREADSAFE_PSEUDOSTACK) lazy-allocates a 60 KB scratch buffer on the first
+// encode call.  By then, BLE + I2S DMA have fragmented the heap so malloc(60000) fails,
+// global_stack stays NULL, and PUSH writes to ~0x92c → StoreProhibited crash.
+// Fix: grab the scratch buffer AND pre-allocate the OpusEncoder early in setup() before
+// anything else fragments the heap.  The encoder is then kept alive across MODE_RX
+// sessions to avoid re-allocation.
+extern "C" {
+  extern char *scratch_ptr;
+  extern char *global_stack;
+}
+
 const uint32_t RSSI_REPORT_INTERVAL_MS = 100;
 const uint16_t USB_BUFFER_SIZE = 1024*2;
 
@@ -79,6 +90,11 @@ void setMode(Mode newMode) {
 
 void setup() {
   boardSetup();
+  // Grab the 60 KB Opus pseudo-stack from the heap while it is still clean, then
+  // pre-allocate the OpusEncoder for the same reason.  Both allocations fail if
+  // deferred until MODE_RX because BLE + I2S DMA fragment the heap by then.
+  scratch_ptr = global_stack = (char *)malloc(60000);
+  initRxCodec();
   // Communication with Android via USB cable
   Serial.setRxBufferSize(USB_BUFFER_SIZE);
   Serial.setTxBufferSize(USB_BUFFER_SIZE);
@@ -97,6 +113,8 @@ void setup() {
   // Configure watch dog timer (WDT), which will reset the system if it gets stuck somehow.
   esp_task_wdt_init(10, true);  // Reboot if locked up for a bit
   esp_task_wdt_add(NULL);       // Add the current task to WDT watch
+  // Audio task temporarily disabled for crash diagnosis.
+  // xTaskCreatePinnedToCore(audioTask, "AudioTask", 65536, NULL, 1, &audioTaskHandle, ARDUINO_RUNNING_CORE);
   buttonsSetup();
   // Set up radio module defaults
   pinMode(hw.pins.pinPd, OUTPUT);
